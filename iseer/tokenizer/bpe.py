@@ -215,12 +215,44 @@ class BPETokenizer:
         return new_tokens
     
     def encode(self, text: str, add_special_tokens: bool = True) -> List[int]:
-        """Encode text to token IDs."""
+        """Encode text to token IDs - OPTIMIZED VERSION."""
         tokens = [bytes([b]) for b in text.encode('utf-8')]
         
-        # Apply merges in order
-        for pair in self.merges:
-            tokens = self._merge_pair(tokens, pair)
+        # Build merge lookup for O(1) access
+        if not hasattr(self, '_merge_lookup'):
+            self._merge_lookup = {pair: pair[0] + pair[1] for pair in self.merges}
+            # Also need merge priority (earlier = higher priority)
+            self._merge_priority = {pair: i for i, pair in enumerate(self.merges)}
+        
+        # Iteratively merge until no more merges possible
+        while len(tokens) > 1:
+            # Find the best (highest priority) merge in current tokens
+            best_pair = None
+            best_priority = float('inf')
+            
+            for i in range(len(tokens) - 1):
+                pair = (tokens[i], tokens[i + 1])
+                if pair in self._merge_lookup:
+                    priority = self._merge_priority[pair]
+                    if priority < best_priority:
+                        best_priority = priority
+                        best_pair = pair
+            
+            if best_pair is None:
+                break  # No more merges possible
+            
+            # Apply the best merge
+            merged = self._merge_lookup[best_pair]
+            new_tokens = []
+            i = 0
+            while i < len(tokens):
+                if i < len(tokens) - 1 and tokens[i] == best_pair[0] and tokens[i + 1] == best_pair[1]:
+                    new_tokens.append(merged)
+                    i += 2
+                else:
+                    new_tokens.append(tokens[i])
+                    i += 1
+            tokens = new_tokens
         
         ids = []
         if add_special_tokens:
